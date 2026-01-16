@@ -1,0 +1,24 @@
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Claude settings (local only)
+.claude/
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Logs
+*.log
+
+# Blue noise texture (user must obtain separately due to licensing)
+# Uncomment the line below if you want users to download it separately
+# Reshade-Shaders/Textures/BlueNoise_256x256.png
