@@ -94,8 +94,8 @@ float4 HierarchicalRayMarch(
             break;
         }
 
-        // Sample scene depth
-        float sceneDepth = SampleDepth(rayUV);
+        // Sample scene depth (use LOD version in loop)
+        float sceneDepth = SampleDepthLod(rayUV);
 
         if (IsSky(sceneDepth))
         {
@@ -454,13 +454,13 @@ float3 DenoiseGI(
     const int varianceRadius = 1;
 
     [loop]
-    for (int y = -varianceRadius; y <= varianceRadius; y++)
+    for (int vy = -varianceRadius; vy <= varianceRadius; vy++)
     {
         [loop]
-        for (int x = -varianceRadius; x <= varianceRadius; x++)
+        for (int vx = -varianceRadius; vx <= varianceRadius; vx++)
         {
-            float2 offset = float2(x, y) * pixelsize;
-            float3 sampleGI = tex2D(giTex, texcoord + offset).rgb;
+            float2 offset = float2(vx, vy) * pixelsize;
+            float3 sampleGI = tex2Dlod(giTex, float4(texcoord + offset, 0, 0)).rgb;
             variance += abs(sampleGI - centerGI);
         }
     }
@@ -472,35 +472,35 @@ float3 DenoiseGI(
     float blurRadius = lerp(0.5, 2.0, saturate(avgVariance * 5.0)) * strength;
 
     // Edge-preserving bilateral filter
-    float3 filteredGI = float3(0, 0, 0);
+    float3 filteredGI = centerGI; // Initialize to center value
     float totalWeight = 0.0;
 
     const int kernelRadius = 2;
 
     [loop]
-    for (int y = -kernelRadius; y <= kernelRadius; y++)
+    for (int ky = -kernelRadius; ky <= kernelRadius; ky++)
     {
         [loop]
-        for (int x = -kernelRadius; x <= kernelRadius; x++)
+        for (int kx = -kernelRadius; kx <= kernelRadius; kx++)
         {
-            float2 offset = float2(x, y) * pixelsize * blurRadius;
-            float2 sampleUV = texcoord + offset;
+            float2 koffset = float2(kx, ky) * pixelsize * blurRadius;
+            float2 sampleUV = texcoord + koffset;
 
             if (any(sampleUV < 0) || any(sampleUV > 1))
                 continue;
 
-            float sampleDepth = SampleDepth(sampleUV);
-            float3 sampleGI = tex2D(giTex, sampleUV).rgb;
-            float3 sampleNormal = ReconstructNormal(sampleUV);
+            float sampleDepth = SampleDepthLod(sampleUV);
+            float3 sampleGIVal = tex2Dlod(giTex, float4(sampleUV, 0, 0)).rgb;
+            float3 sampleNormal = ReconstructNormalLod(sampleUV);
 
             // Bilateral weights
             float depthWeight = exp(-abs(sampleDepth - depth) * 20.0);
             float normalWeight = pow(max(0, dot(centerNormal, sampleNormal)), 8.0);
-            float spatialWeight = exp(-float(x*x + y*y) / (2.0 * blurRadius * blurRadius));
+            float spatialWeight = exp(-float(kx*kx + ky*ky) / (2.0 * blurRadius * blurRadius));
 
             float weight = depthWeight * normalWeight * spatialWeight;
 
-            filteredGI += sampleGI * weight;
+            filteredGI += sampleGIVal * weight;
             totalWeight += weight;
         }
     }

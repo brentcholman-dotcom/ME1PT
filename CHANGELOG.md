@@ -56,9 +56,42 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.1.0] - 2026-01-17
+
+### Bug Fix Release
+
+**Critical Fixes**
+- 🐛 Fixed render target read/write conflicts causing compilation errors
+- 🐛 Fixed gradient instruction errors in dynamic loops
+- 🐛 Fixed incomplete normal reconstruction function
+- 🐛 Improved shader compilation stability for ReShade 5.9+
+
+**Technical Changes**
+- Added intermediate temporal buffers for AO, GI, and reflections (3 new render targets)
+- Added 3 copy passes to resolve render target conflicts
+- Implemented `SampleDepthLod()` function for loop-safe depth sampling
+- Replaced all `tex2D()` with `tex2Dlod()` in dynamic loops
+- Completed missing code in `ReconstructNormal()` function
+
+**Affected Files**
+- `ME1_PathTracing.fx` - Added temporal buffers and copy passes
+- `ME1_PT_Common.fxh` - New LOD sampling functions
+- `ME1_PT_AO.fxh` - LOD sampling in horizon angle calculation
+- `ME1_PT_GI.fxh` - LOD sampling in ray marching loops
+- `ME1_PT_Reflections.fxh` - LOD sampling in reflection tracing
+
+**User Impact**
+- ✅ Shaders now compile successfully without errors
+- ✅ No visual changes - all fixes are technical
+- ✅ No performance impact
+- ✅ No configuration changes needed
+- ⚠️ Users with v1.0.0 should update for stability
+
+---
+
 ## Planned Future Updates
 
-### [1.1.0] - Planned
+### [1.2.0] - Planned
 **Performance Improvements**
 - [ ] Checkerboard rendering for heavy passes (potential 2× speedup)
 - [ ] Half-resolution option for GI

@@ -53,6 +53,27 @@ float SampleDepth(float2 texcoord)
 }
 
 /**
+ * Sample depth buffer using explicit LOD (safe for use in loops)
+ * This avoids gradient instruction issues in dynamic loops
+ */
+float SampleDepthLod(float2 texcoord)
+{
+    #if RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN
+        texcoord.y = 1.0 - texcoord.y;
+    #endif
+    float depth = tex2Dlod(ReShade::DepthBuffer, float4(texcoord, 0, 0)).x;
+    #if RESHADE_DEPTH_INPUT_IS_REVERSED
+        depth = 1.0 - depth;
+    #endif
+    #if RESHADE_DEPTH_INPUT_IS_LOGARITHMIC
+        const float C = 0.01;
+        depth = (exp(depth * log(C + 1.0)) - 1.0) / C;
+    #endif
+    depth /= RESHADE_DEPTH_LINEARIZATION_FAR_PLANE - depth * RESHADE_DEPTH_LINEARIZATION_FAR_PLANE + depth;
+    return depth;
+}
+
+/**
  * Linearize depth value from [0,1] to view-space depth in world units
  * Optimized for UE3's typical depth buffer configuration
  */
@@ -160,6 +181,39 @@ float3 ReconstructNormal(float2 texcoord)
 }
 
 /**
+ * LOD version of ReconstructNormal (safe for use in loops)
+ */
+float3 ReconstructNormalLod(float2 texcoord)
+{
+    float depth = SampleDepthLod(texcoord);
+
+    if (IsSky(depth))
+        return float3(0, 0, 1);
+
+    // Sample neighbor depths for gradient calculation
+    float depthL = SampleDepthLod(texcoord + float2(-pixelsize.x, 0));
+    float depthR = SampleDepthLod(texcoord + float2(pixelsize.x, 0));
+    float depthU = SampleDepthLod(texcoord + float2(0, -pixelsize.y));
+    float depthD = SampleDepthLod(texcoord + float2(0, pixelsize.y));
+
+    // Reconstruct positions
+    float3 posC = GetViewPosition(texcoord, depth);
+    float3 posL = GetViewPosition(texcoord + float2(-pixelsize.x, 0), depthL);
+    float3 posR = GetViewPosition(texcoord + float2(pixelsize.x, 0), depthR);
+    float3 posU = GetViewPosition(texcoord + float2(0, -pixelsize.y), depthU);
+    float3 posD = GetViewPosition(texcoord + float2(0, pixelsize.y), depthD);
+
+    // Calculate tangent vectors
+    float3 dx = (abs(depthR - depth) < abs(depthL - depth)) ? posR - posC : posC - posL;
+    float3 dy = (abs(depthD - depth) < abs(depthU - depth)) ? posD - posC : posC - posU;
+
+    // Cross product to get normal
+    float3 normal = normalize(cross(dy, dx));
+
+    return normal;
+}
+
+/**
  * Improved normal reconstruction with better edge handling
  */
 float3 ReconstructNormalImproved(float2 texcoord)
@@ -183,11 +237,11 @@ float3 ReconstructNormalImproved(float2 texcoord)
     float3 normal = float3(0, 0, 0);
     int validSamples = 0;
 
-    [unroll]
+    [loop]
     for (int i = 0; i < 4; i++)
     {
         float2 uv1 = texcoord + offsets[i];
-        float2 uv2 = texcoord + offsets[(i + 1) % 4];
+        float2 uv2 = texcoord + offsets[(uint(i) + 1u) & 3u];
 
         float depth1 = SampleDepth(uv1);
         float depth2 = SampleDepth(uv2);
@@ -242,7 +296,7 @@ float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previ
             if (any(sampleUV < 0) || any(sampleUV > 1))
                 continue;
 
-            float prevDepth = tex2D(previousDepthTex, sampleUV).r;
+            float prevDepth = tex2Dlod(previousDepthTex, float4(sampleUV, 0, 0)).r;
             float depthDiff = abs(prevDepth - currentDepth);
 
             if (depthDiff < bestMatch)
@@ -303,10 +357,25 @@ float4 SampleBlueNoise(float2 texcoord)
     float2 noiseUV = texcoord * (screensize / 256.0);
 
     // Add temporal rotation for better temporal distribution
-    float angle = float(framecount % 64) * GOLDEN_RATIO * TWO_PI;
+    float angle = float(framecount & 63u) * GOLDEN_RATIO * TWO_PI;
     float2 offset = float2(cos(angle), sin(angle)) * 0.001;
 
     return tex2D(BlueNoise, noiseUV + offset);
+}
+
+/**
+ * Sample blue noise texture using explicit LOD (safe for loops)
+ */
+float4 SampleBlueNoiseLod(float2 texcoord)
+{
+    // Tile the blue noise and add temporal offset
+    float2 noiseUV = texcoord * (screensize / 256.0);
+
+    // Add temporal rotation for better temporal distribution
+    float angle = float(framecount & 63u) * GOLDEN_RATIO * TWO_PI;
+    float2 offset = float2(cos(angle), sin(angle)) * 0.001;
+
+    return tex2Dlod(BlueNoise, float4(noiseUV + offset, 0, 0));
 }
 
 /**
@@ -314,17 +383,17 @@ float4 SampleBlueNoise(float2 texcoord)
  */
 float2 GetBlueNoiseOffset(float2 texcoord, int sampleIndex)
 {
-    float4 noise = SampleBlueNoise(texcoord);
+    float4 noise = SampleBlueNoiseLod(texcoord);
 
     // Use different channels for different sample indices
     float2 offset;
-    if (sampleIndex % 2 == 0)
+    if ((uint(sampleIndex) & 1u) == 0u)
         offset = noise.rg;
     else
         offset = noise.ba;
 
     // Add temporal jitter
-    float temporalPhase = (framecount % 16) / 16.0;
+    float temporalPhase = float(framecount & 15u) / 16.0;
     offset = frac(offset + temporalPhase);
 
     return offset;
@@ -335,8 +404,15 @@ float2 GetBlueNoiseOffset(float2 texcoord, int sampleIndex)
  */
 float2 Hammersley(int i, int N)
 {
-    float ri = reversebits(i) * 2.3283064365386963e-10; // Divide by 0x100000000
-    return float2(float(i) / float(N), ri);
+    // Manual bit reversal (Van der Corput sequence) - avoids reversebits() compatibility issues
+    uint bits = uint(i);
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    float ri = float(bits) * 2.3283064365386963e-10; // Divide by 0x100000000
+    return float2(float(uint(i)) / float(uint(N)), ri);
 }
 
 /**
@@ -441,7 +517,7 @@ float3 EstimateF0(float3 color, float metalness)
  */
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+    return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
 /**
@@ -449,7 +525,7 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
  */
 float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 {
-    return F0 + (max(float3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+    return F0 + (max(float3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), F0) - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
 /**
@@ -509,8 +585,8 @@ float4 ScreenSpaceRayMarch(
         if (any(rayUV < 0) || any(rayUV > 1))
             break;
 
-        // Sample depth at ray position
-        float sceneDepth = SampleDepth(rayUV);
+        // Sample depth at ray position (use LOD version in loop)
+        float sceneDepth = SampleDepthLod(rayUV);
         float rayDepth = length(rayPos);
 
         // Check for intersection

@@ -83,7 +83,7 @@ float4 RayMarchReflection(
             break;
 
         // Sample depth
-        float sceneDepth = SampleDepth(rayUV);
+        float sceneDepth = SampleDepthLod(rayUV);
 
         if (IsSky(sceneDepth))
             continue;
@@ -103,7 +103,7 @@ float4 RayMarchReflection(
             float3 refinedRayPos = rayPos - rayDir * stepSize;
             float refinedStepSize = stepSize;
 
-            [unroll]
+            [loop]
             for (int refinement = 0; refinement < 4; refinement++)
             {
                 refinedStepSize *= 0.5;
@@ -122,7 +122,7 @@ float4 RayMarchReflection(
                 if (any(refinedUV < 0) || any(refinedUV > 1))
                     break;
 
-                float refinedSceneDepth = SampleDepth(refinedUV);
+                float refinedSceneDepth = SampleDepthLod(refinedUV);
                 float refinedSceneZ = LinearizeDepth(refinedSceneDepth);
                 float refinedRayZ = length(refinedRayPos);
 
@@ -351,7 +351,7 @@ float4 CalculateReflection(
     float reflectionConfidence = reflectionResult.a;
 
     // Fade out at grazing angles for rough surfaces
-    float grazingFade = pow(NdotV, lerp(0.5, 2.0, roughness));
+    float grazingFade = pow(max(0.001, NdotV), lerp(0.5, 2.0, roughness));
     reflectionConfidence *= grazingFade;
 
     return float4(reflectionColor, reflectionConfidence);
@@ -438,32 +438,32 @@ float4 DenoiseReflection(
     // Adaptive kernel size based on confidence (low confidence = more blur)
     float blurRadius = lerp(2.0, 0.5, centerReflection.a) * strength;
 
-    float4 filteredReflection = float4(0, 0, 0, 0);
+    float4 filteredReflection = centerReflection; // Initialize to center value
     float totalWeight = 0.0;
 
     const int kernelRadius = 2;
 
     [loop]
-    for (int y = -kernelRadius; y <= kernelRadius; y++)
+    for (int ry = -kernelRadius; ry <= kernelRadius; ry++)
     {
         [loop]
-        for (int x = -kernelRadius; x <= kernelRadius; x++)
+        for (int rx = -kernelRadius; rx <= kernelRadius; rx++)
         {
-            float2 offset = float2(x, y) * pixelsize * blurRadius;
+            float2 offset = float2(rx, ry) * pixelsize * blurRadius;
             float2 sampleUV = texcoord + offset;
 
             if (any(sampleUV < 0) || any(sampleUV > 1))
                 continue;
 
-            float sampleDepth = SampleDepth(sampleUV);
-            float4 sampleReflection = tex2D(reflectionTex, sampleUV);
-            float3 sampleNormal = ReconstructNormal(sampleUV);
+            float sampleDepth = SampleDepthLod(sampleUV);
+            float4 sampleReflection = tex2Dlod(reflectionTex, float4(sampleUV, 0, 0));
+            float3 sampleNormal = ReconstructNormalLod(sampleUV);
 
             // Bilateral weights
             float depthWeight = exp(-abs(sampleDepth - depth) * 30.0);
             float normalWeight = pow(max(0, dot(centerNormal, sampleNormal)), 16.0);
             float confidenceWeight = saturate(sampleReflection.a * 2.0);
-            float spatialWeight = exp(-float(x*x + y*y) / (2.0 * blurRadius * blurRadius));
+            float spatialWeight = exp(-float(rx*rx + ry*ry) / (2.0 * blurRadius * blurRadius));
 
             float weight = depthWeight * normalWeight * confidenceWeight * spatialWeight;
 

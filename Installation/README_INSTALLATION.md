@@ -1,5 +1,7 @@
 # ME1 Path Tracing - Installation Guide
 
+**Version 1.1.0** - Bug Fix Release
+
 ## Overview
 
 This mod adds hybrid path tracing to Mass Effect 1 Legendary Edition using ReShade, bringing modern lighting techniques including:
@@ -221,10 +223,12 @@ After enabling the shader, press **Home** to access ReShade menu and configure:
 - Try clicking "Reload" button in ReShade menu
 
 ### Shader Fails to Compile
+- **Note**: v1.1.0 fixes critical compilation errors from v1.0.0. Update to latest version!
 - Ensure you're using ReShade 5.9.0 or newer
 - Check that `ReShade.fxh` exists in ReShade's Shaders folder
 - Look for error messages in the ReShade log (reshade.log in game folder)
 - Common fix: Update ReShade to latest version
+- If using v1.0.0, update to v1.1.0 for stability (fixed render target and LOD sampling issues)
 
 ### Black Screen or No Effect Visible
 - Enable debug mode (set Debug Visualization to "AO Only" or "Normals")

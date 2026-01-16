@@ -4,7 +4,7 @@
 
 Brings modern path traced lighting to Mass Effect 1 LE using ReShade, featuring global illumination, ray-traced reflections, and ground truth ambient occlusion.
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.1-blue)
 ![ReShade](https://img.shields.io/badge/ReShade-5.9+-green)
 ![Game](https://img.shields.io/badge/game-ME1%20Legendary%20Edition-red)
 

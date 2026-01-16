@@ -53,8 +53,8 @@ float CalculateHorizonAngle(
     if (any(sampleUV < 0) || any(sampleUV > 1))
         return -PI / 2.0; // No occlusion outside screen
 
-    // Sample depth and reconstruct position
-    float sampleDepth = SampleDepth(sampleUV);
+    // Sample depth and reconstruct position (use LOD version - called from loop)
+    float sampleDepth = SampleDepthLod(sampleUV);
     float3 samplePos = GetViewPosition(sampleUV, sampleDepth);
 
     // Calculate horizon vector
@@ -102,7 +102,7 @@ float IntegrateOcclusionSlice(
     float minHorizonAngle = PI / 2.0;
 
     // Sample both positive and negative directions
-    [unroll]
+    [loop]
     for (int i = 0; i < AO_STEPS_PER_DIRECTION; i++)
     {
         // Positive direction
@@ -184,7 +184,7 @@ float4 CalculateGTAO(
     for (int i = 0; i < numDirections; i++)
     {
         // Get direction with temporal rotation for better distribution
-        float angle = (TWO_PI * float(i) / float(numDirections)) +
+        float angle = (TWO_PI * float(uint(i)) / float(uint(numDirections))) +
                       (framecount * GOLDEN_RATIO * 0.1);
 
         float2 sliceDir = float2(cos(angle), sin(angle));
@@ -300,25 +300,25 @@ float4 BilateralBlurAO(
     const int kernelSize = 3;
 
     [loop]
-    for (int y = -kernelSize; y <= kernelSize; y++)
+    for (int by = -kernelSize; by <= kernelSize; by++)
     {
         [loop]
-        for (int x = -kernelSize; x <= kernelSize; x++)
+        for (int bx = -kernelSize; bx <= kernelSize; bx++)
         {
-            float2 offset = float2(x, y) * pixelsize * blurRadius;
+            float2 offset = float2(bx, by) * pixelsize * blurRadius;
             float2 sampleUV = texcoord + offset;
 
             if (any(sampleUV < 0) || any(sampleUV > 1))
                 continue;
 
-            float sampleDepth = tex2D(depthTex, sampleUV).r;
-            float sampleAO = tex2D(aoTex, sampleUV).r;
-            float3 sampleNormal = ReconstructNormal(sampleUV);
+            float sampleDepth = tex2Dlod(depthTex, float4(sampleUV, 0, 0)).r;
+            float sampleAO = tex2Dlod(aoTex, float4(sampleUV, 0, 0)).r;
+            float3 sampleNormal = ReconstructNormalLod(sampleUV);
 
             // Calculate weights based on depth and normal similarity
             float depthWeight = exp(-abs(sampleDepth - centerDepth) * 10.0);
             float normalWeight = pow(max(0, dot(centerNormal, sampleNormal)), 4.0);
-            float spatialWeight = exp(-float(x*x + y*y) / (2.0 * blurRadius * blurRadius));
+            float spatialWeight = exp(-float(bx*bx + by*by) / (2.0 * blurRadius * blurRadius));
 
             float weight = depthWeight * normalWeight * spatialWeight;
 
@@ -379,7 +379,7 @@ float4 TemporalAccumulateAO(
  */
 float4 ApplyAOPower(float4 ao, float power)
 {
-    ao.rgb = pow(ao.rgb, power);
+    ao.rgb = pow(max(0.0, ao.rgb), power);
     return ao;
 }
 

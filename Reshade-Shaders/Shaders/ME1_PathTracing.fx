@@ -6,7 +6,7 @@
     and ground truth ambient occlusion.
 
     Author: Claude AI
-    Version: 1.0
+    Version: 1.1
     Target: ReShade 5.9+, DirectX 11/12
 
     Features:
@@ -210,6 +210,15 @@ texture2D texPreviousAO
 };
 sampler2D samplerPreviousAO { Texture = texPreviousAO; };
 
+// Temporal AO output (intermediate to avoid read/write conflict)
+texture2D texAOTemporal
+{
+    Width = BUFFER_WIDTH;
+    Height = BUFFER_HEIGHT;
+    Format = R8;
+};
+sampler2D samplerAOTemporal { Texture = texAOTemporal; };
+
 // GI accumulation buffer
 texture2D texGI
 {
@@ -237,6 +246,15 @@ texture2D texPreviousGI
 };
 sampler2D samplerPreviousGI { Texture = texPreviousGI; };
 
+// Temporal GI output (intermediate to avoid read/write conflict)
+texture2D texGITemporal
+{
+    Width = BUFFER_WIDTH;
+    Height = BUFFER_HEIGHT;
+    Format = RGBA16F;
+};
+sampler2D samplerGITemporal { Texture = texGITemporal; };
+
 // Reflection buffer
 texture2D texReflection
 {
@@ -263,6 +281,15 @@ texture2D texPreviousReflection
     Format = RGBA16F;
 };
 sampler2D samplerPreviousReflection { Texture = texPreviousReflection; };
+
+// Temporal reflection output (intermediate to avoid read/write conflict)
+texture2D texReflectionTemporal
+{
+    Width = BUFFER_WIDTH;
+    Height = BUFFER_HEIGHT;
+    Format = RGBA16F;
+};
+sampler2D samplerReflectionTemporal { Texture = texReflectionTemporal; };
 
 //==============================================================================
 // Vertex Shader
@@ -341,6 +368,12 @@ float4 PS_TemporalAO(VS_OUTPUT input) : SV_Target
     );
 }
 
+// Copy temporal AO result back to blurred buffer
+float4 PS_CopyAOTemporal(VS_OUTPUT input) : SV_Target
+{
+    return tex2D(samplerAOTemporal, input.texcoord);
+}
+
 //==============================================================================
 // Pixel Shaders - Pass 4: Global Illumination
 //==============================================================================
@@ -416,6 +449,12 @@ float4 PS_TemporalGI(VS_OUTPUT input) : SV_Target
     return float4(accumulatedGI, 1.0);
 }
 
+// Copy temporal GI result back to denoised buffer
+float4 PS_CopyGITemporal(VS_OUTPUT input) : SV_Target
+{
+    return tex2D(samplerGITemporal, input.texcoord);
+}
+
 //==============================================================================
 // Pixel Shaders - Pass 7: Reflections
 //==============================================================================
@@ -468,6 +507,12 @@ float4 PS_TemporalReflections(VS_OUTPUT input) : SV_Target
         samplerPreviousDepth,
         fTemporalBlendFactor
     );
+}
+
+// Copy temporal reflection result back to denoised buffer
+float4 PS_CopyReflectionTemporal(VS_OUTPUT input) : SV_Target
+{
+    return tex2D(samplerReflectionTemporal, input.texcoord);
 }
 
 //==============================================================================
@@ -591,11 +636,19 @@ technique ME1_PathTracing <
         RenderTarget = texAOBlurred;
     }
 
-    // Pass 3: Temporal AO (updates texAOBlurred in place)
+    // Pass 3: Temporal AO (writes to intermediate texture)
     pass TemporalAO
     {
         VertexShader = VS_PostProcess;
         PixelShader = PS_TemporalAO;
+        RenderTarget = texAOTemporal;
+    }
+
+    // Pass 3b: Copy temporal AO back to blurred buffer
+    pass CopyAOTemporal
+    {
+        VertexShader = VS_PostProcess;
+        PixelShader = PS_CopyAOTemporal;
         RenderTarget = texAOBlurred;
     }
 
@@ -615,11 +668,19 @@ technique ME1_PathTracing <
         RenderTarget = texGIDenoised;
     }
 
-    // Pass 6: Temporal GI (updates texGIDenoised in place)
+    // Pass 6: Temporal GI (writes to intermediate texture)
     pass TemporalGI
     {
         VertexShader = VS_PostProcess;
         PixelShader = PS_TemporalGI;
+        RenderTarget = texGITemporal;
+    }
+
+    // Pass 6b: Copy temporal GI back to denoised buffer
+    pass CopyGITemporal
+    {
+        VertexShader = VS_PostProcess;
+        PixelShader = PS_CopyGITemporal;
         RenderTarget = texGIDenoised;
     }
 
@@ -639,11 +700,19 @@ technique ME1_PathTracing <
         RenderTarget = texReflectionDenoised;
     }
 
-    // Pass 9: Temporal Reflections (updates texReflectionDenoised in place)
+    // Pass 9: Temporal Reflections (writes to intermediate texture)
     pass TemporalReflections
     {
         VertexShader = VS_PostProcess;
         PixelShader = PS_TemporalReflections;
+        RenderTarget = texReflectionTemporal;
+    }
+
+    // Pass 9b: Copy temporal reflection back to denoised buffer
+    pass CopyReflectionTemporal
+    {
+        VertexShader = VS_PostProcess;
+        PixelShader = PS_CopyReflectionTemporal;
         RenderTarget = texReflectionDenoised;
     }
 

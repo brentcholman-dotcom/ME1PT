@@ -544,6 +544,119 @@ To find bottlenecks:
 
 ---
 
+## ReShade-Specific Implementation Details (v1.1.0)
+
+### Render Target Management
+
+**Problem**: ReShade doesn't allow reading from and writing to the same render target in a single pass.
+
+**Original Implementation (v1.0.0 - Broken)**:
+```hlsl
+// Pass 3: Temporal AO
+pass TemporalAO {
+    RenderTarget = texAOBlurred;  // Writing here
+    // But also reading from texAOBlurred in PS_TemporalAO!
+    // This causes compilation errors
+}
+```
+
+**Fixed Implementation (v1.1.0)**:
+```hlsl
+// Pass 3: Temporal AO (write to intermediate buffer)
+pass TemporalAO {
+    RenderTarget = texAOTemporal;  // Write to temp buffer
+}
+
+// Pass 3b: Copy back (separate pass)
+pass CopyAOTemporal {
+    RenderTarget = texAOBlurred;  // Now write back
+}
+```
+
+**Why This Works**:
+- Pass 3 reads from `texAOBlurred` (previous frame) and writes to `texAOTemporal`
+- Pass 3b reads from `texAOTemporal` and writes to `texAOBlurred`
+- No single pass reads and writes the same target
+
+**Cost**: 3 additional render targets + 3 additional passes, but necessary for correctness.
+
+### LOD Sampling in Dynamic Loops
+
+**Problem**: Gradient instructions (used by `tex2D()`) are undefined in dynamic loops in HLSL.
+
+**Original Implementation (v1.0.0 - Broken)**:
+```hlsl
+[loop]
+for (int i = 0; i < maxSteps; i++) {
+    float depth = tex2D(depthSampler, uv);  // ERROR: Gradient in loop
+    // ...
+}
+```
+
+**Fixed Implementation (v1.1.0)**:
+```hlsl
+// New function in ME1_PT_Common.fxh
+float SampleDepthLod(float2 texcoord) {
+    // Uses tex2Dlod with explicit LOD = 0
+    float depth = tex2Dlod(ReShade::DepthBuffer, float4(texcoord, 0, 0)).x;
+    // ... linearization code ...
+    return depth;
+}
+
+[loop]
+for (int i = 0; i < maxSteps; i++) {
+    float depth = SampleDepthLod(uv);  // OK: No gradient needed
+    // ...
+}
+```
+
+**Why This Works**:
+- `tex2Dlod()` requires explicit LOD (level of detail) parameter
+- No automatic mipmap selection needed
+- GPU doesn't need to compute gradients
+- LOD=0 means use highest resolution mip level
+
+**Affected Functions**:
+- All ray marching loops (GI, reflections)
+- All bilateral filtering loops (denoising)
+- Normal reconstruction (uses neighbor samples)
+- Motion vector estimation
+
+### Temporal Buffer Architecture
+
+**Pipeline Flow (v1.1.0)**:
+
+```
+Frame N:
+  1. Calculate AO → texAO
+  2. Blur AO → texAOBlurred
+  3. Temporal AO: read texAOBlurred + texPreviousAO → texAOTemporal
+  4. Copy: texAOTemporal → texAOBlurred
+
+  5. Calculate GI (uses texAOBlurred) → texGI
+  6. Denoise GI → texGIDenoised
+  7. Temporal GI: read texGIDenoised + texPreviousGI → texGITemporal
+  8. Copy: texGITemporal → texGIDenoised
+
+  9. Calculate Reflections → texReflection
+  10. Denoise Reflections → texReflectionDenoised
+  11. Temporal Reflections: read texReflectionDenoised + texPreviousReflection → texReflectionTemporal
+  12. Copy: texReflectionTemporal → texReflectionDenoised
+
+  13. Composite all effects → Final output
+
+  14. Store current depth → texPreviousDepth
+  15. Store texAOBlurred → texPreviousAO
+  16. Store texGIDenoised → texPreviousGI
+  17. Store texReflectionDenoised → texPreviousReflection
+
+Frame N+1 uses texPrevious* buffers for temporal reprojection
+```
+
+**Memory Cost**: ~110MB VRAM @ 1080p, ~200MB @ 1440p, ~400MB @ 4K
+
+---
+
 ## Mathematical Details
 
 ### GTAO Integration

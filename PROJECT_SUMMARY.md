@@ -1,8 +1,17 @@
 # Project Summary - ME1 Path Tracing Mod
 
 **Created**: January 16, 2026
-**Version**: 1.0.0
+**Current Version**: 1.1.0 (Bug Fix Release)
 **Total Lines**: ~5,100+ (code + documentation)
+
+## Recent Updates
+
+**v1.1.0 (January 17, 2026)** - Critical bug fix release
+- Fixed render target read/write conflicts
+- Fixed gradient instruction errors in loops
+- Added LOD-based sampling for dynamic loops
+- Improved shader compilation stability
+- No visual changes or performance impact
 
 ---
 
