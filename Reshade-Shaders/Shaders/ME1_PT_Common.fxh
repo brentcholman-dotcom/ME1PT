@@ -282,7 +282,7 @@ float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previ
     float bestMatch = 1e10;
     float2 bestOffset = float2(0, 0);
 
-    const int searchRadius = 2;
+    const int searchRadius = 5; // v1.1.1: Increased from 2 to 5 for better flat surface tracking
 
     [loop]
     for (int y = -searchRadius; y <= searchRadius; y++)
@@ -308,7 +308,8 @@ float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previ
     }
 
     // Only return motion vector if we found a good match
-    return (bestMatch < 0.05) ? bestOffset : float2(0, 0);
+    // v1.1.1: Tightened from 0.05 to 0.01 for more precise matching
+    return (bestMatch < 0.01) ? bestOffset : float2(0, 0);
 }
 
 /**
@@ -322,7 +323,8 @@ bool IsReprojectionValid(float2 prevUV, float currentDepth, float previousDepth)
 
     // Check depth similarity (disocclusion test)
     float depthDiff = abs(currentDepth - previousDepth);
-    if (depthDiff > 0.1) // Threshold for disocclusion
+    // v1.1.1: Tightened from 0.1 to 0.02 to catch subtle mismatches on flat surfaces
+    if (depthDiff > 0.02) // Threshold for disocclusion
         return false;
 
     return true;

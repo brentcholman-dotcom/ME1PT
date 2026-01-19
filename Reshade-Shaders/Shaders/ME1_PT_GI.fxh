@@ -408,7 +408,8 @@ float3 TemporalAccumulateGI(
 
         // Check for significant color change (possible disocclusion)
         float colorDiff = length(currentGI - previousGI);
-        float maxColorDiff = 0.5;
+        // v1.1.1: Tightened from 0.5 to 0.25 to catch more disocclusions
+        float maxColorDiff = 0.25;
 
         if (colorDiff < maxColorDiff)
         {
@@ -416,8 +417,9 @@ float3 TemporalAccumulateGI(
             float3 blendedGI = lerp(currentGI, previousGI, blendFactor);
 
             // Clamp to prevent ghosting
-            float3 giMin = currentGI * 0.5;
-            float3 giMax = currentGI * 2.0;
+            // v1.1.1: Tightened from 0.5-2.0x to 0.7-1.4x range
+            float3 giMin = currentGI * 0.7;
+            float3 giMax = currentGI * 1.4;
             blendedGI = clamp(blendedGI, giMin, giMax);
 
             return blendedGI;

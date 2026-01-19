@@ -6,7 +6,7 @@
     and ground truth ambient occlusion.
 
     Author: Claude AI
-    Version: 1.1
+    Version: 1.1.1
     Target: ReShade 5.9+, DirectX 11/12
 
     Features:
@@ -50,7 +50,7 @@ uniform float fTemporalBlendFactor <
     ui_label = "Temporal Blend Factor";
     ui_min = 0.8; ui_max = 0.99; ui_step = 0.01;
     ui_tooltip = "How much to blend with previous frames. Higher = smoother but more ghosting.";
-> = 0.95;
+> = 0.88; // v1.1.1: Reduced from 0.95 to reduce ghosting on flat surfaces
 
 // Visual Settings - Global Illumination
 uniform bool bEnableGI <

@@ -361,8 +361,9 @@ float4 TemporalAccumulateAO(
         float blendedAO = lerp(currentAO, previousAO, blendFactor);
 
         // Clamp to prevent excessive ghosting
-        float aoMin = currentAO - 0.1;
-        float aoMax = currentAO + 0.1;
+        // v1.1.1: Tightened from ±0.1 to ±0.04 to reduce ghosting on flat surfaces
+        float aoMin = currentAO - 0.04;
+        float aoMax = currentAO + 0.04;
         blendedAO = clamp(blendedAO, aoMin, aoMax);
 
         return float4(blendedAO, blendedAO, blendedAO, 1.0);

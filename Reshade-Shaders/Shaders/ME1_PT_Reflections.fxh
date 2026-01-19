@@ -390,15 +390,17 @@ float4 TemporalAccumulateReflection(
         float4 previousReflection = tex2D(previousReflectionTex, prevUV);
 
         // Check confidence - don't blend if previous confidence is too low
-        if (previousReflection.a > 0.1)
+        // v1.1.1: Increased from 0.1 to 0.35 to reject low-quality history
+        if (previousReflection.a > 0.35)
         {
             // Blend RGB and confidence separately
             float3 blendedColor = lerp(currentReflection.rgb, previousReflection.rgb, blendFactor);
             float blendedConfidence = lerp(currentReflection.a, previousReflection.a, blendFactor * 0.8);
 
             // Clamp to prevent ghosting
-            float3 colorMin = currentReflection.rgb * 0.5;
-            float3 colorMax = currentReflection.rgb * 2.0;
+            // v1.1.1: Tightened from 0.5-2.0x to 0.75-1.3x range
+            float3 colorMin = currentReflection.rgb * 0.75;
+            float3 colorMax = currentReflection.rgb * 1.3;
             blendedColor = clamp(blendedColor, colorMin, colorMax);
 
             return float4(blendedColor, blendedConfidence);
