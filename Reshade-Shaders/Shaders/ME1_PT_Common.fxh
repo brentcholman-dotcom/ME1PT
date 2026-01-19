@@ -275,6 +275,7 @@ float3 ReconstructNormalImproved(float2 texcoord)
 /**
  * Estimate motion vector by comparing current and previous frame depth
  * Simple but effective for stationary camera with moving objects
+ * v1.1.2: Optimized with early exit and reduced search radius for better performance
  */
 float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previousDepthTex)
 {
@@ -282,7 +283,10 @@ float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previ
     float bestMatch = 1e10;
     float2 bestOffset = float2(0, 0);
 
-    const int searchRadius = 5; // v1.1.1: Increased from 2 to 5 for better flat surface tracking
+    // v1.1.2: Reduced from 5 to 3 for performance (7x7 window, 49 samples vs 121)
+    // Still 2x better than original radius 2, but 2.5x faster than radius 5
+    const int searchRadius = 3;
+    const float earlyExitThreshold = 0.005; // Exit early if we find excellent match
 
     [loop]
     for (int y = -searchRadius; y <= searchRadius; y++)
@@ -303,6 +307,10 @@ float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previ
             {
                 bestMatch = depthDiff;
                 bestOffset = -offset; // Negative because we're finding where it came from
+
+                // Early exit if we found an excellent match (performance optimization)
+                if (bestMatch < earlyExitThreshold)
+                    return bestOffset;
             }
         }
     }

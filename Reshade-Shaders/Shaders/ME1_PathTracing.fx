@@ -6,7 +6,7 @@
     and ground truth ambient occlusion.
 
     Author: Claude AI
-    Version: 1.1.1
+    Version: 1.1.2
     Target: ReShade 5.9+, DirectX 11/12
 
     Features:
