@@ -351,7 +351,12 @@ float4 TemporalAccumulateAO(
 
     // Check if reprojection is valid
     float previousDepth = tex2D(previousDepthTex, prevUV).r;
-    bool validReprojection = IsReprojectionValid(prevUV, currentDepth, previousDepth);
+    
+    // v1.1.2: Add normal validation
+    float3 currentNormal = ReconstructNormal(texcoord);
+    float3 previousNormal = ReconstructNormalFromBuffer(prevUV, previousDepthTex);
+    
+    bool validReprojection = IsReprojectionValid(prevUV, currentDepth, previousDepth, currentNormal, previousNormal);
 
     if (validReprojection)
     {

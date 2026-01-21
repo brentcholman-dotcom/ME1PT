@@ -321,9 +321,40 @@ float2 EstimateMotionVector(float2 texcoord, float currentDepth, sampler2D previ
 }
 
 /**
- * Check if reprojected sample is valid (disocclusion detection)
+ * Reconstruct normal from an arbitrary depth sampler (e.g., previous frame)
  */
-bool IsReprojectionValid(float2 prevUV, float currentDepth, float previousDepth)
+float3 ReconstructNormalFromBuffer(float2 texcoord, sampler2D depthTex)
+{
+    float depth = tex2Dlod(depthTex, float4(texcoord, 0, 0)).r;
+
+    if (IsSky(depth))
+        return float3(0, 0, 1);
+
+    // Sample neighbor depths
+    float depthL = tex2Dlod(depthTex, float4(texcoord + float2(-pixelsize.x, 0), 0, 0)).r;
+    float depthR = tex2Dlod(depthTex, float4(texcoord + float2(pixelsize.x, 0), 0, 0)).r;
+    float depthU = tex2Dlod(depthTex, float4(texcoord + float2(0, -pixelsize.y), 0, 0)).r;
+    float depthD = tex2Dlod(depthTex, float4(texcoord + float2(0, pixelsize.y), 0, 0)).r;
+
+    // We can use the same GetViewPosition because projection matrix usually doesn't change enough to matter for normals
+    float3 posC = GetViewPosition(texcoord, depth);
+    float3 posL = GetViewPosition(texcoord + float2(-pixelsize.x, 0), depthL);
+    float3 posR = GetViewPosition(texcoord + float2(pixelsize.x, 0), depthR);
+    float3 posU = GetViewPosition(texcoord + float2(0, -pixelsize.y), depthU);
+    float3 posD = GetViewPosition(texcoord + float2(0, pixelsize.y), depthD);
+
+    // Calculate tangent vectors
+    float3 dx = (abs(depthR - depth) < abs(depthL - depth)) ? posR - posC : posC - posL;
+    float3 dy = (abs(depthD - depth) < abs(depthU - depth)) ? posD - posC : posC - posU;
+
+    return normalize(cross(dy, dx));
+}
+
+/**
+ * Check if reprojected sample is valid (disocclusion detection)
+ * Checks both depth and normal similarity
+ */
+bool IsReprojectionValid(float2 prevUV, float currentDepth, float previousDepth, float3 currentNormal, float3 previousNormal)
 {
     // Check bounds
     if (any(prevUV < 0) || any(prevUV > 1))
@@ -333,6 +364,12 @@ bool IsReprojectionValid(float2 prevUV, float currentDepth, float previousDepth)
     float depthDiff = abs(currentDepth - previousDepth);
     // v1.1.1: Tightened from 0.1 to 0.02 to catch subtle mismatches on flat surfaces
     if (depthDiff > 0.02) // Threshold for disocclusion
+        return false;
+
+    // Check normal similarity (geometric stability test)
+    // Dot product close to 1.0 means normals point in same direction
+    // Threshold 0.85 allows for ~30 degrees of difference
+    if (dot(currentNormal, previousNormal) < 0.85)
         return false;
 
     return true;

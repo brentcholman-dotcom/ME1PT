@@ -383,15 +383,20 @@ float4 TemporalAccumulateReflection(
 
     // Check validity
     float previousDepth = tex2D(previousDepthTex, prevUV).r;
-    bool validReprojection = IsReprojectionValid(prevUV, currentDepth, previousDepth);
+    
+    // v1.1.2: Add normal validation to prevent sliding artifacts
+    float3 currentNormal = ReconstructNormal(texcoord);
+    float3 previousNormal = ReconstructNormalFromBuffer(prevUV, previousDepthTex);
+    
+    bool validReprojection = IsReprojectionValid(prevUV, currentDepth, previousDepth, currentNormal, previousNormal);
 
     if (validReprojection)
     {
         float4 previousReflection = tex2D(previousReflectionTex, prevUV);
 
         // Check confidence - don't blend if previous confidence is too low
-        // v1.1.1: Increased from 0.1 to 0.35 to reject low-quality history
-        if (previousReflection.a > 0.35)
+        // v1.1.2: Reduced from 0.35 to 0.1 to allow better persistence on detailed objects
+        if (previousReflection.a > 0.1)
         {
             // Blend RGB and confidence separately
             float3 blendedColor = lerp(currentReflection.rgb, previousReflection.rgb, blendFactor);

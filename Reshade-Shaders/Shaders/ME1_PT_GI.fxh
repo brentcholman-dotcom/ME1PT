@@ -400,7 +400,12 @@ float3 TemporalAccumulateGI(
 
     // Check validity
     float previousDepth = tex2D(previousDepthTex, prevUV).r;
-    bool validReprojection = IsReprojectionValid(prevUV, currentDepth, previousDepth);
+    
+    // v1.1.2: Add normal validation to prevent sliding artifacts
+    float3 currentNormal = ReconstructNormal(texcoord);
+    float3 previousNormal = ReconstructNormalFromBuffer(prevUV, previousDepthTex);
+    
+    bool validReprojection = IsReprojectionValid(prevUV, currentDepth, previousDepth, currentNormal, previousNormal);
 
     if (validReprojection)
     {
